@@ -157,6 +157,7 @@ class Horizon:
         self.cla = {}  # holds cluster actors
         self.recorded_events = recorded_events
         self.show_m = None
+        self._scene = None
         self.return_showm = return_showm
         self.bg_color = bg_color
         self.order_transparent = order_transparent
@@ -390,7 +391,20 @@ class Horizon:
         """
         self.show_m.render()
 
+    def _update_actors(self, actors):
+        """Update actors in the scene. It essentially brings them forward in
+        the stack.
+
+        Parameters
+        ----------
+        actors : list
+            list of FURY actors.
+        """
+        self._scene.rm(*actors)
+        self._scene.add(*actors)
+
     def build_show(self, scene):
+        self._scene = scene
 
         title = 'Horizon ' + horizon_version
         self.show_m = window.ShowManager(
@@ -463,29 +477,23 @@ class Horizon:
                 title = 'Image {}'.format(img_count+1)
                 data, affine, fname = unpack_image(img)
                 self.vox2ras = affine
-                if is_binary_image(data):
-                    if self.__roi_images:
-                        if 'rois' in self.random_colors:
-                            roi_color = next(self.color_gen)
-                        roi_actor = actor.contour_from_roi(
-                            data, affine=affine, color=roi_color)
-                        scene.add(roi_actor)
-                        roi_actors.append(roi_actor)
-                    else:
-                        slices_viz = SlicesVisualizer(
-                            self.show_m.iren, scene, data, affine=affine,
-                            world_coords=self.world_coords,
-                            percentiles=[0, 100], rgb=self.rgb)
-                        self.__tabs.append(SlicesTab(
-                            slices_viz, title, fname, self._show_force_render))
-                        img_count += 1
+                binary_image = is_binary_image(data)
+                if binary_image and self.__roi_images:
+                    if 'rois' in self.random_colors:
+                        roi_color = next(self.color_gen)
+                    roi_actor = actor.contour_from_roi(
+                        data, affine=affine, color=roi_color)
+                    scene.add(roi_actor)
+                    roi_actors.append(roi_actor)
                 else:
                     slices_viz = SlicesVisualizer(
                         self.show_m.iren, scene, data, affine=affine,
-                        world_coords=self.world_coords, rgb=self.rgb)
+                        world_coords=self.world_coords, rgb=self.rgb,
+                        is_binary=binary_image)
                     self.__tabs.append(SlicesTab(
                         slices_viz, title, fname, self._show_force_render))
                     img_count += 1
+
             if len(roi_actors) > 0:
                 self.__tabs.append(ROIsTab(roi_actors))
 
@@ -518,17 +526,19 @@ class Horizon:
         self.__win_size = scene.GetSize()
 
         if len(self.__tabs) > 0:
-            def on_tab_changed(actors):
-                for act in actors:
-                    scene.rm(act)
-                    scene.add(act)
-
             self.__tab_mgr = TabManager(
-                self.__tabs, scene.GetSize(),
-                on_tab_changed, sync_slices, sync_vol, sync_peaks)
+                tabs=self.__tabs,
+                win_size=scene.GetSize(),
+                on_tab_changed=self._update_actors,
+                add_to_scene=self._scene.add,
+                remove_from_scene=self._scene.rm,
+                sync_slices=sync_slices,
+                sync_volumes=sync_vol,
+                sync_peaks=sync_peaks)
 
             scene.add(self.__tab_mgr.tab_ui)
             self.__tab_mgr.handle_text_overflows()
+            self.__tabs[-1].on_tab_selected()
 
         self.show_m.initialize()
 

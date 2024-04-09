@@ -6,6 +6,7 @@ import numpy.testing as npt
 import pytest
 
 from dipy.data import DATA_DIR
+from dipy.direction.peaks import PeaksAndMetrics
 from dipy.io.stateful_tractogram import Space, StatefulTractogram
 from dipy.io.utils import create_nifti_header
 from dipy.testing import check_for_warnings
@@ -35,8 +36,16 @@ def test_horizon_events(rng):
 
     data = 255 * rng.random((197, 233, 189))
     vox_size = (1., 1., 1.)
-    images = [(data, affine, '/test/filename.nii.gz')]
-    # images = None
+    img = np.zeros((197, 233, 189))
+    img[0:25, :, :] = 1
+    images = [(data, affine, '/test/filename.nii.gz'), (img, affine)]
+
+    peak_dirs = 255 * rng.random((5, 5, 5, 5, 3))
+    pam = PeaksAndMetrics()
+    pam.peak_dirs = peak_dirs
+    pam.affine = affine
+    pams = [pam]
+
     from dipy.segment.tests.test_bundles import setup_module
     setup_module()
     from dipy.segment.tests.test_bundles import f1
@@ -53,8 +62,8 @@ def test_horizon_events(rng):
     # blocks recording
     fname = os.path.join(DATA_DIR, 'record_horizon.log.gz')
 
-    horizon(tractograms=tractograms, images=images, pams=None,
-            cluster=True, cluster_thr=5.0,
+    horizon(tractograms=tractograms, images=images, pams=pams,
+            cluster=True, cluster_thr=5.0, roi_images=True,
             random_colors=False, length_gt=0, length_lt=np.inf,
             clusters_gt=0, clusters_lt=np.inf,
             world_coords=True, interactive=True, out_png='tmp.png',
@@ -169,7 +178,7 @@ def test_roi_images(rng):
     npt.assert_array_equal(report.colors_found, [True, True])
     show_m = horizon(images=images, roi_images=True, return_showm=True)
     analysis = window.analyze_scene(show_m.scene)
-    npt.assert_equal(analysis.actors, 2)
+    npt.assert_equal(analysis.actors, 3)
 
 
 @pytest.mark.skipif(skip_it or not has_fury, reason="Needs xvfb")
